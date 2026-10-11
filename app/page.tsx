@@ -1,49 +1,79 @@
-import { AlertCircle, ArrowRight, Cloud, FileText, Folder, HardDrive, LockKeyhole, Plus, Search, ShieldCheck, Upload } from "lucide-react";
-import { demoAccounts, demoFiles, formatBytes, type DriveAccount, type DriveFile } from "@/lib/demo-data";
+import Link from "next/link";
+import { ArrowDown, ArrowRight, Check, Cloud, Files, FolderOpen, Gauge, LockKeyhole, Search, ShieldCheck, Sparkles } from "lucide-react";
 
-const colors: Record<DriveAccount["color"], string> = {
-  violet: "account-violet", blue: "account-blue", amber: "account-amber", green: "account-green", rose: "account-rose",
-};
-const accountById = new Map(demoAccounts.map((account) => [account.id, account]));
-const totalUsed = demoAccounts.reduce((sum, item) => sum + item.usedBytes, 0);
-const totalCapacity = demoAccounts.reduce((sum, item) => sum + item.totalBytes, 0);
+const features = [
+  { icon: Files, title: "One view for every drive", description: "Bring files from your different Google Drive accounts into one clear workspace, without jumping between profiles." },
+  { icon: Search, title: "Find files faster", description: "Search across connected accounts and quickly understand which account a file belongs to." },
+  { icon: Gauge, title: "Understand your storage", description: "See storage usage account by account, while keeping each Google account's quota distinct." },
+  { icon: LockKeyhole, title: "Your files stay yours", description: "Private by default. Account ownership and explicit permissions should decide who can access each resource." },
+];
 
-function Avatar({ account }: { account: DriveAccount }) {
-  return <span className={`account-avatar ${colors[account.color]}`}>{account.initials}</span>;
-}
-function FileMark({ kind }: { kind: DriveFile["kind"] }) {
-  if (kind === "folder") return <Folder size={18} className="file-folder" />;
-  return <FileText size={18} className={kind === "pdf" ? "file-pdf" : "file-doc"} />;
-}
 export default function HomePage() {
-  return <main className="app-shell">
-    <aside className="sidebar">
-      <a className="brand" href="#"><span className="brand-mark"><Cloud size={21}/></span><span>omni<span className="brand-light">drive</span></span></a>
-      <div className="workspace-label">WORKSPACE</div>
-      <nav><a className="nav-item active" href="#"><HardDrive size={17}/> Overview</a><a className="nav-item" href="#files"><Folder size={17}/> All files <span className="nav-count">{demoFiles.length}</span></a><a className="nav-item" href="#accounts"><Cloud size={17}/> Connected drives <span className="nav-count">{demoAccounts.length}</span></a></nav>
-      <div className="sidebar-section-head">CONNECTED ACCOUNTS</div>
-      <div className="sidebar-accounts">{demoAccounts.map((account) => <a className="sidebar-account" href="#accounts" key={account.id}><Avatar account={account}/><span>{account.label}</span><i className={account.status === "connected" ? "online-dot" : "warning-dot"}/></a>)}</div>
-      <div className="privacy-card"><ShieldCheck size={18}/><div><strong>Private by design</strong><p>Only you can access your connected drives. Sharing is off by default.</p></div></div>
-    </aside>
-    <section className="main-panel">
-      <header className="topbar"><div>Workspace <span> / </span> <strong>Overview</strong></div><span className="demo-pill">● &nbsp; Demo data</span></header>
-      <div className="page-content">
-        <div className="welcome-row"><div><div className="eyebrow">YOUR CLOUD, IN ONE PLACE</div><h1>Your drives, together<span>.</span></h1><p className="page-subtitle">A clearer view of storage across your connected accounts.</p></div><button className="button" title="Google connection will be implemented in a later phase"><Plus size={16}/> Connect a drive</button></div>
-        <div className="notice-banner"><AlertCircle size={19}/><div><strong>Preview mode — no Google accounts are connected</strong><p>All accounts and files below are fictional demo data. Authentication and Drive access are not implemented yet.</p></div></div>
-        <section className="stats-grid">
-          <article className="stat-card"><div className="stat-top">Total reported capacity <HardDrive size={17}/></div><div className="stat-value">{formatBytes(totalCapacity)}</div><div className="stat-foot">Across {demoAccounts.length} demo accounts</div></article>
-          <article className="stat-card"><div className="stat-top">Reported space used <Cloud size={17}/></div><div className="stat-value">{formatBytes(totalUsed)}</div><div className="stat-foot">{Math.round(totalUsed / totalCapacity * 100)}% of demo capacity</div></article>
-          <article className="stat-card"><div className="stat-top">Connected accounts <ShieldCheck size={17}/></div><div className="stat-value">{demoAccounts.filter(a => a.status === "connected").length}<small> / {demoAccounts.length}</small></div><div className="stat-foot">Mock connection states only</div></article>
-        </section>
-        <section className="content-grid">
-          <article className="panel" id="accounts"><div className="panel-heading"><div><h2>Storage by account</h2><p>Each Google account keeps its own quota.</p></div></div><div className="account-list">
-            {demoAccounts.map((account) => { const percent = Math.min(100, account.usedBytes / account.totalBytes * 100); return <div className="storage-account-row" key={account.id}><Avatar account={account}/><div className="storage-account-main"><div className="storage-account-title"><strong>{account.label}</strong><span className={account.status === "connected" ? "status" : "status status-warning"}>{account.status === "connected" ? "Demo connected" : "Needs attention"}</span></div><span className="account-email">{account.email}</span><div className="storage-bar"><span className={colors[account.color]} style={{width: percent + "%"}}/></div></div><div className="storage-numbers"><strong>{formatBytes(account.usedBytes)}</strong><span>of {formatBytes(account.totalBytes)}</span><small>{Math.round(percent)}% used</small></div></div>; })}
-          </div><div className="storage-footnote"><LockKeyhole size={14}/> Combined numbers are informational, not a merged Google quota.</div></article>
-          <article className="panel"><div className="panel-heading"><h2>Quick actions</h2><p>Shortcuts for your workspace.</p></div><button className="quick-action" title="Not implemented yet"><Search size={18}/><span><strong>Search all drives</strong><small>Find files across accounts</small></span><ArrowRight size={15}/></button><button className="quick-action" title="Not implemented yet"><Upload size={18}/><span><strong>Upload a file</strong><small>Choose a destination account</small></span><ArrowRight size={15}/></button><div className="tip-card">Every file stays tied to its source account, so access checks can be enforced correctly.</div></article>
-        </section>
-        <section className="panel" id="files"><div className="panel-heading"><div><h2>Recent files</h2><p>A sample of files from connected drives.</p></div><span className="search-hint"><Search size={14}/> Search coming later</span></div><div className="table-scroll"><table className="files-table"><thead><tr><th>Name</th><th>Source account</th><th>Last modified</th><th>Size</th></tr></thead><tbody>{demoFiles.map((file) => { const account = accountById.get(file.accountId); if (!account) return null; return <tr key={file.id}><td><div className="file-name-cell"><FileMark kind={file.kind}/>{file.name}</div></td><td><div className="file-account-cell"><Avatar account={account}/>{account.label}</div></td><td className="muted-cell">{file.modified}</td><td className="muted-cell">{file.sizeLabel}</td></tr>; })}</tbody></table></div></section>
-        <footer className="page-footer"><span><LockKeyhole size={14}/> Privacy-first by default</span><span>OmniDrive preview · No Google account access</span></footer>
-      </div>
-    </section>
-  </main>;
+  return (
+    <main className="landing-page">
+      <header className="landing-nav">
+        <Link className="landing-brand" href="/" aria-label="OmniDrive home">
+          <span className="brand-mark"><Cloud size={21} /></span>
+          <span>omni<span className="brand-light">drive</span></span>
+        </Link>
+        <nav className="landing-nav-links" aria-label="Main navigation">
+          <a href="#features">Features</a>
+          <a href="#privacy">Privacy</a>
+          <Link className="landing-nav-cta" href="/dashboard">Explore preview <ArrowRight size={15} /></Link>
+        </nav>
+      </header>
+
+      <section className="landing-hero">
+        <div className="hero-copy">
+          <div className="landing-eyebrow"><Sparkles size={14} /> A simpler way to manage cloud files</div>
+          <h1>All your drives.<br /><span>One clear view.</span></h1>
+          <p className="landing-lede">OmniDrive is being built to help you manage multiple Google Drive accounts from one organized workspace—so your files are easier to find and your storage is easier to understand.</p>
+          <div className="hero-actions">
+            <Link className="landing-primary-button" href="/dashboard">Explore the preview <ArrowRight size={17} /></Link>
+            <a className="landing-secondary-button" href="#features">See what it does <ArrowDown size={16} /></a>
+          </div>
+          <p className="hero-note"><LockKeyhole size={14} /> Private-by-default design. Google account connection is not live yet.</p>
+        </div>
+
+        <div className="hero-visual" aria-label="Illustration of multiple drives in one workspace">
+          <div className="visual-glow" />
+          <div className="drive-window">
+            <div className="drive-window-top"><div className="window-dots"><i /><i /><i /></div><span>YOUR WORKSPACE</span><span className="preview-tag">PREVIEW</span></div>
+            <div className="drive-window-title"><div><small>YOUR ACCOUNTS</small><h2>Everything, together.</h2></div><span className="window-cloud"><Cloud size={23} /></span></div>
+            <div className="mini-drive-row"><span className="mini-drive-icon mini-purple"><Cloud size={17} /></span><div><strong>Personal Drive</strong><small>Documents · Photos · Files</small></div><span className="mini-check"><Check size={14} /></span></div>
+            <div className="mini-drive-row"><span className="mini-drive-icon mini-blue"><Cloud size={17} /></span><div><strong>Work Drive</strong><small>Projects · Reports · Shared files</small></div><span className="mini-check"><Check size={14} /></span></div>
+            <div className="mini-drive-row"><span className="mini-drive-icon mini-orange"><FolderOpen size={17} /></span><div><strong>Other accounts</strong><small>Keep each source identifiable</small></div><span className="mini-more">•••</span></div>
+            <div className="visual-bottom-note"><ShieldCheck size={15} /> Separate accounts. One workspace.</div>
+          </div>
+          <div className="floating-file"><span className="floating-file-icon"><Files size={17} /></span><span><strong>Your files, organized</strong><small>Across your accounts</small></span></div>
+        </div>
+      </section>
+
+      <section className="landing-trust-strip" id="privacy">
+        <div><ShieldCheck size={19} /><span><strong>Privacy first</strong><small>Access should always be permission-based</small></span></div>
+        <div><Cloud size={19} /><span><strong>Multiple accounts</strong><small>Designed for personal and work drives</small></span></div>
+        <div><FolderOpen size={19} /><span><strong>Clear organization</strong><small>Know which account each file belongs to</small></span></div>
+      </section>
+
+      <section className="landing-features" id="features">
+        <div className="section-intro"><span className="landing-eyebrow">WHY OMNIDRIVE</span><h2>Less account switching.<br />More clarity.</h2><p>A unified experience for your cloud files, with a clear boundary around every account.</p></div>
+        <div className="feature-grid">
+          {features.map(({ icon: Icon, title, description }, index) => (
+            <article className="feature-card" key={title}>
+              <span className={`feature-icon feature-icon-${index + 1}`}><Icon size={20} /></span>
+              <h3>{title}</h3>
+              <p>{description}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="landing-bottom-cta">
+        <div><span className="landing-eyebrow">OMNIDRIVE · IN DEVELOPMENT</span><h2>Your cloud, a little less complicated.</h2><p>Take a look at the current interface preview while the secure account connection is being built.</p></div>
+        <Link className="landing-primary-button" href="/dashboard">View dashboard preview <ArrowRight size={17} /></Link>
+      </section>
+
+      <footer className="landing-footer"><Link className="landing-brand" href="/"><span className="brand-mark"><Cloud size={18} /></span><span>omni<span className="brand-light">drive</span></span></Link><span>Designed for clarity. Built with privacy in mind.</span><span>Preview only · No Google accounts connected</span></footer>
+    </main>
+  );
 }
