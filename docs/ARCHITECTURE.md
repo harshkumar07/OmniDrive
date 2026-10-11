@@ -592,3 +592,149 @@ Use official documentation and re-check it before public release, because APIs, 
 - Drizzle ORM: https://orm.drizzle.team/docs/overview
 - PostgreSQL documentation: https://www.postgresql.org/docs/
 - Auth.js documentation: https://authjs.dev/
+
+
+## Engineering Standards: Clean, Reusable, Production-Ready Architecture
+
+These standards are the default for implementation work in OmniDrive. They describe the intended architecture; a documented rule is not evidence that the corresponding control has already been implemented.
+
+### 1. Architecture approach
+
+Start with a **modular monolith**, not microservices. Keep deployable complexity low while enforcing clear module boundaries. Organize by business capability (identity, connected drives, files, storage, sharing) and use the same request-processing pattern within each backend module.
+
+A typical backend flow is:
+
+`HTTP route handler → input/schema validation → application use case → domain rules → repository/provider interface → infrastructure adapter`
+
+- **Route handlers/controllers:** HTTP concerns only—parse and validate input, authenticate, invoke a use case, and translate its result to an HTTP response. Do not put business rules or SQL/Google API calls here.
+- **Application/use-case layer:** Orchestrates a user goal, such as connecting a Drive account or listing files. Owns transaction boundaries and coordinates domain logic and ports.
+- **Domain layer:** Holds business rules and domain types. It must not depend on Next.js, the database driver, or Google SDK types.
+- **Infrastructure layer:** Implements database repositories, Google Drive/OAuth clients, token encryption, logging, and other external integrations behind narrow interfaces.
+- **Composition boundary:** Wire concrete implementations in one clearly defined server-only location. Never import server infrastructure into client components.
+
+Keep this as a small, understandable structure; do not create interfaces or abstractions that have no real seam, reuse, or testing benefit.
+
+### 2. Frontend: keep UI separate from business logic
+
+Use feature-oriented modules so related screens, hooks, schemas, and API contracts are easy to find. For example:
+
+```text
+src/
+  features/
+    drives/
+      components/       # presentation-only components
+      hooks/            # UI state and lifecycle coordination
+      services/         # client-side use-case/API orchestration
+      schemas/          # request/response validation and types
+    files/
+    storage/
+  components/           # shared, generic UI components
+  lib/
+    api/                 # shared HTTP client and response parsing
+    errors/              # client-safe error types/mapping
+```
+
+- Components render props/state and emit user intent. They should not contain authorization rules, provider API calls, storage calculations, or large workflows.
+- Put reusable UI state and lifecycle coordination in custom hooks. Put API calls in a shared typed API client and feature-specific service functions; avoid duplicating fetch/error/JSON parsing in components.
+- Keep **business rules on the server as the source of truth**. Frontend validation is for usability and must never replace server-side validation or authorization.
+- Define explicit TypeScript request/response types and validate untrusted network data at boundaries. Do not treat a TypeScript type alone as runtime validation.
+- Keep loading, empty, success, partial-success, and error states explicit. Retry only safe/idempotent operations, and avoid infinite retry loops.
+- Use React error boundaries for unexpected rendering failures. They do not replace handling errors from event handlers, requests, or server actions.
+- Shared components should be generic and reusable; feature-specific workflows should remain in the feature module rather than a giant all-purpose component.
+
+### 3. Backend: one consistent use-case pattern
+
+Each feature should follow the same structure, adapted only when complexity warrants it:
+
+```text
+src/server/
+  modules/
+    drives/
+      drives.routes.ts       # HTTP adapter
+      drives.schemas.ts      # boundary validation
+      connect-drive.ts       # application use case
+      drive-policy.ts        # domain rules
+      drive.repository.ts    # repository port/interface
+      google-drive.adapter.ts# provider adapter
+```
+
+The names are illustrative, not a requirement to create every file immediately.
+
+- Use explicit DTOs; never expose database rows or Google API responses directly as public API contracts.
+- Validate route params, query strings, request bodies, pagination limits, and provider responses at boundaries.
+- Keep persistence behind repositories. Keep Google-specific API details behind provider adapters, translating provider errors into application-level errors.
+- Inject dependencies into use cases so they can be unit-tested without a live database or Google account.
+- Use database constraints and transactions for invariants that must hold under concurrent requests. Do not rely only on pre-checks in application code.
+- Keep functions small and cohesive. Extract a shared helper only when semantics are genuinely shared; do not build a generic framework for a single use.
+- Avoid hidden global mutable state. Use stateless request handling where possible and make cache keys include the full authorization scope.
+
+### 4. Standard error handling
+
+Use a small, documented application error vocabulary, for example:
+
+- `VALIDATION_ERROR` — invalid input.
+- `UNAUTHENTICATED` — no valid user session.
+- `FORBIDDEN` — the authenticated user lacks permission.
+- `NOT_FOUND` — resource absent or deliberately concealed to prevent disclosure.
+- `CONFLICT` — state transition or uniqueness conflict.
+- `RATE_LIMITED` — an operation must be retried later.
+- `PROVIDER_UNAVAILABLE` — Google or another dependency is unavailable.
+- `INTERNAL_ERROR` — unexpected failure.
+
+Rules:
+
+- Translate low-level database, OAuth, and Google API exceptions at the adapter boundary. Do not leak raw provider errors, SQL, stack traces, token values, or internal paths to clients.
+- Convert known application errors into a consistent response shape containing a stable code, safe message, and request/correlation ID. Include field-level validation details only when safe.
+- Log unexpected exceptions once at the appropriate boundary with stack trace and correlation ID; avoid logging the same exception at every layer.
+- Fail closed for authentication, ownership checks, token decryption, and permission evaluation. Never return data merely because an authorization service failed.
+- Treat a connected account failing independently from other accounts as a possible partial-success case. Return per-account success/failure in a documented shape only when safe; never silently present incomplete data as complete.
+- Retry only transient failures with bounded exponential backoff and jitter, honoring provider retry hints. Do not automatically retry non-idempotent operations unless they have an idempotency strategy.
+- Cancellation and client disconnects should not be reported as unexpected server failures when they are expected control flow.
+
+### 5. Logging, audit, and observability
+
+Use one server-side structured logger interface across modules so logging fields and redaction behavior are consistent. Emit structured JSON in production where supported.
+
+Recommended fields: timestamp, severity, event name, environment, request/correlation ID, route or operation, duration, outcome, stable error code, and a pseudonymous internal user ID when needed for diagnosis.
+
+- Never log OAuth access/refresh tokens, cookies, authorization headers, client secrets, encryption keys, raw file contents, or full sensitive provider payloads.
+- Avoid logging file names, email addresses, and search queries by default; they can reveal private information. Add only reviewed, necessary fields and apply redaction.
+- Record security-sensitive events—account connected/disconnected, token refresh/revocation failures, permission denials, and sharing-grant changes—as audit events distinct from diagnostic logs. Audit events must not contain credentials.
+- Capture latency, error rates, provider rate limits, database failures, token refresh outcomes, and partial-account failures. Add alerts when operational thresholds are defined.
+- Do not build a home-grown monitoring platform. Start with platform logs and metrics; integrate an established provider when the operational need is clear.
+- Client-side logs must be privacy-conscious and must not include secrets or private file data. Server logs are the source of truth for security investigations.
+
+### 6. Security and multi-account isolation
+
+- Derive the current user exclusively from a validated server-side session. Never trust a client-supplied `userId`, account owner, or authorization flag.
+- Scope every connected-account, file-metadata, and sharing-grant query by the authenticated user's ownership or an explicitly validated grant. A resource ID being hard to guess is not authorization.
+- Check authorization on every server request, including nested resources, background jobs, downloads, and future sharing endpoints.
+- Keep Google tokens server-side and encrypted at rest using a managed secret/key service where available. Never send refresh tokens to the browser.
+- Request the minimum OAuth scopes needed for each feature. Validate OAuth state and redirect URIs; use PKCE where applicable and handle revocation and reconnect flows.
+- Cache entries must be partitioned by user and connected account. Never use a shared cache key that can return one user's data to another.
+- Sharing is opt-in and deny-by-default: no share without an explicit, validated grant for the exact resource and recipient. Do not implement sharing until its policy, revocation, and tests are specified.
+
+### 7. Testing strategy
+
+- **Unit tests:** domain rules, use cases, error translation, storage calculations, pagination, and retry decisions.
+- **Adapter/integration tests:** repositories, database constraints, Google API mapping, token lifecycle, and migrations.
+- **API tests:** validation, authentication, response contracts, rate limiting, and safe error responses.
+- **Isolation/security tests:** User A cannot read, search, download, disconnect, or mutate User B's account or file metadata; guessed IDs and altered request parameters must not bypass ownership checks.
+- **Frontend tests:** user-visible loading/empty/error/partial-success states and interaction behavior; keep core business-rule tests out of component tests.
+- **End-to-end tests:** connect, list, refresh, disconnect, and reconnect a test account using a safe test environment. Avoid real user data.
+- CI should run formatting/lint, type checks, unit tests, integration tests where configured, and a production build. Dependency/security checks should be added and failures reviewed rather than blindly ignored.
+
+### 8. Performance and change management
+
+- Paginate large file lists; avoid loading all provider data into memory. Use bounded concurrency and respect Google API quotas.
+- Use database indexes based on actual query patterns and inspect slow queries before adding caching.
+- Add caching only with a documented freshness/invalidation policy and authorization-safe keys.
+- Prefer cursor pagination when provider ordering and page tokens support it. Treat provider page tokens as opaque.
+- Make long-running sync work resumable and idempotent before moving it to background jobs.
+- Keep configuration environment-specific and validated at startup. Fail early when required configuration is missing; never commit real secrets.
+- Upgrade dependencies deliberately, commit the lockfile, and require CI to pass before promoting a change. Security patches take priority over feature work.
+- Document architecture decisions when a choice has meaningful long-term consequences; keep this file actionable rather than collecting arbitrary patterns.
+
+### 9. Definition of done for a feature
+
+A feature is not complete just because its happy path works. Confirm that it has input validation, server-side authorization, consistent error mapping, privacy-safe logs, loading/empty/error states, relevant tests, migration/configuration notes if needed, and a successful CI build. Mark controls as implemented only after code and tests demonstrate them.
