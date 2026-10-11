@@ -1,0 +1,30 @@
+{
+  "name": "omni-drive",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A private-by-default dashboard for managing multiple Google Drive accounts.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.44.5",
+    "lucide-react": "^0.468.0",
+    "next": "15.5.6",
+    "postgres": "^3.4.7",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.30",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.7",
+    "eslint": "^9.29.0",
+    "eslint-config-next": "15.5.6",
+    "typescript": "^5.8.3"
+  }
+}
