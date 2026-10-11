@@ -17,9 +17,11 @@ OmniDrive is an **account aggregation and management layer**, not a new storage 
 2. **Clear ownership.** Every file row must identify the Google account that owns the file and every operation must target that account explicitly.
 3. **No artificial quota pooling.** OmniDrive may summarize reported quota information across connected accounts for convenience, but this is a dashboard metric—not a merged Google quota or a guarantee that any one upload can use the total. Do not implement account sharding or file splitting to circumvent Google storage limits, quotas, or policies.
 4. **Least privilege.** Request only the Google OAuth scopes required for a feature, explain why they are needed, and verify Google's current scope classification and verification requirements before launch.
-5. **Security by default.** OAuth tokens are server-side secrets, encrypted at rest, never returned to the browser, and never written to logs.
-6. **Start simple, preserve seams.** Begin with a modular monolith. Separate modules by responsibility, not by deploying microservices prematurely.
-7. **Graceful degradation.** If one connected account is unavailable, the rest of the dashboard should continue to work and report the affected account's state.
+5. **Private by default / deny by default.** A user can access only their own connected accounts and files unless an explicit, validated sharing grant exists. No implicit sharing between users.
+6. **Explicit, narrow sharing only.** If sharing is added later, the owner must select the exact file or folder and the recipient, choose the minimum allowed actions, confirm the grant, and be able to revoke it. Sharing is out of scope for the MVP.
+7. **Security by default.** OAuth tokens are server-side secrets, encrypted at rest, never returned to the browser, and never written to logs.
+8. **Start simple, preserve seams.** Begin with a modular monolith. Separate modules by responsibility, not by deploying microservices prematurely.
+9. **Graceful degradation.** If one connected account is unavailable, the rest of the dashboard should continue to work and report the affected account's state.
 
 ## 2. Scope and boundaries
 
@@ -33,13 +35,14 @@ OmniDrive is an **account aggregation and management layer**, not a new storage 
 - Uploading a file to a user-selected account when supported by the granted permissions.
 - Opening files in Google Drive and, where authorized, downloading or managing them.
 - Account disconnection, token revocation/deletion, error handling, audit-safe operational logs, and basic usage limits.
+- Strict per-user data isolation and default-deny authorization from the first release.
 
 ### Explicitly out of scope for the initial version
 
 - Combining separate Google quotas into a single Google quota.
 - Automatically distributing, splitting, or sharding files among accounts to evade storage limits or Google API restrictions.
 - Hosting a duplicate copy of every user's Drive files in OmniDrive.
-- Shared/team drives, enterprise administration, Dropbox/OneDrive integrations, desktop sync, mobile-native apps, and collaborative editing until separately designed.
+- File/folder sharing between OmniDrive users, shared/team drives, enterprise administration, Dropbox/OneDrive integrations, desktop sync, and mobile-native apps until separately designed. Sharing must have its own threat model and explicit authorization design before implementation.
 - Microservices, Kubernetes, message brokers, and a dedicated search cluster before real usage justifies them.
 
 ## 3. Recommended technology stack
@@ -308,6 +311,8 @@ Map provider errors to safe user-facing messages. Keep raw provider payloads out
 - Exact OAuth redirect URI registration and strict callback validation.
 - Server-side token encryption and secret management.
 - Authentication plus resource-level authorization on every account/file endpoint.
+- Deny-by-default isolation: each database query is scoped to the authenticated owner; IDs and URLs are never authorization.
+- No sharing in the MVP. Any future share requires an explicit owner action, a verified recipient, narrow permissions, expiry/revocation support, and checks against Google Drive's own permissions.
 - Rate limits for login, connection, search, quota refresh, and uploads.
 - Input validation, safe file-name handling, and safe rendering of metadata.
 - Security headers and a restrictive Content Security Policy where compatible.
@@ -318,6 +323,38 @@ Map provider errors to safe user-facing messages. Keep raw provider payloads out
 ### Multi-tenant isolation
 
 Even if the first release is for one person, structure records around `users` and enforce ownership checks from day one. Every query involving a connected account must scope by the current user. Use opaque IDs for URLs, but remember that unguessable IDs are not authorization.
+
+**Authorization invariant:** for a resource request, access is allowed only if the authenticated user owns the connected account/resource, or a deliberately implemented and valid share grant authorizes the exact recipient, resource, and action—and Google Drive itself also permits the operation. Otherwise deny. The MVP implements only the owner path. Test this invariant with two distinct users and two distinct sets of Google accounts/files, including guessed IDs and cross-user requests.
+
+
+### Private-by-default authorization and future sharing
+
+**Default rule: no explicit grant means no access.** The MVP has no user-to-user sharing feature. A signed-in user can access only connected accounts owned by their OmniDrive user ID. A connected Google account is not a public resource, and connecting it does not grant access to other OmniDrive users, collaborators, administrators, or anyone who knows a link.
+
+For every request involving an account, file, folder, download, upload, search result, thumbnail, quota, or cached metadata:
+
+1. Authenticate the caller using a validated server-side session.
+2. Load the resource from the database using both its identifier and the caller's authorized ownership scope; do not fetch globally by ID and assume the ID is secret.
+3. Verify the connected account belongs to the caller, or—only if sharing is deliberately implemented in a future phase—verify a valid, unexpired, non-revoked share grant for that exact resource and requested action.
+4. Check the granted Google OAuth scopes and the actual Google Drive permissions. OmniDrive must never treat its own share record as a way to bypass Google's authorization.
+5. Return only the minimum data needed. Do not leak another user's file names, account emails, existence of private resources, provider IDs, error details, or cached metadata.
+6. Record security-relevant actions without logging tokens, file contents, or unnecessary personal information.
+
+Use deny-by-default authorization. Missing ownership, a missing share grant, a revoked grant, an expired grant, insufficient scope, or a failed authorization check must deny the operation. Prefer a generic not-found response for resources the caller is not allowed to discover, to reduce resource enumeration.
+
+**If sharing is added later**, require an explicit flow in which the owner:
+- Selects one exact file or folder from an account they own.
+- Selects a verified recipient identity; never accepts a recipient email or user ID as proof that the caller may share with that person.
+- Chooses a limited role such as viewer or editor, with the allowed actions defined centrally.
+- Reviews and confirms the permission before the grant is created.
+- Can see active grants, revoke a grant, and understand whether revocation applies to descendants of a shared folder.
+- Receives a clear explanation if access must also be granted or revoked in Google Drive itself.
+
+A future `resource_shares` table should store the owner user ID, recipient user ID, resource type, connected account ID, provider file/folder ID, allowed role/actions, created-by user ID, creation/expiry/revocation timestamps, and audit metadata. Add foreign keys and indexes. Do not create this table or expose sharing endpoints until the sharing feature is approved and designed.
+
+Folder sharing needs particular care: access to a folder may imply access to descendants, and Google Drive may have inherited or pre-existing permissions. The app must not assume a folder share is equivalent to a single-file share. Before exposing a shared item, verify both OmniDrive's grant and Google Drive's effective permissions. If those cannot be reconciled safely, deny access.
+
+**Never implement** public-by-default file links, a global “anyone can access” mode, implicit sharing just because users know each other, or use of the owner's OAuth token on behalf of a recipient without an explicit authorized flow. A share in OmniDrive must not silently change Google Drive's native sharing settings. Native Google Drive permission changes, if ever supported, must be a separate clearly disclosed action requiring the owner's authorization.
 
 ## 12. Performance and scale
 
@@ -425,7 +462,8 @@ Commit an `.env.example` containing placeholder names only. Never commit `.env`,
 - **Unit tests:** domain rules, scope checks, error mapping, quota aggregation display logic, pagination helpers, and token-encryption wrappers.
 - **Integration tests:** repositories, migrations, ownership filters, token persistence, and Google adapter behavior using mocked provider responses.
 - **OAuth tests:** invalid/missing state, expired state, replayed callback, denied consent, missing refresh token, revoked access, and mismatched account.
-- **API tests:** unauthenticated requests, cross-user account IDs, invalid payloads, rate limits, and safe error responses.
+- **API tests:** unauthenticated requests, cross-user account IDs, cross-user file IDs, guessed URLs, invalid payloads, rate limits, and safe error responses.
+- **Isolation tests:** User A must not list, search, preview, download, upload into, or retrieve metadata for User B's accounts/files. Test both direct-ID access and identifiers copied from another session. All must fail unless a future explicit share grant is valid.
 - **End-to-end tests:** sign-in, connect-account UI with mocked OAuth callback, account list, file browsing, account disconnect, and partial provider failure.
 - **Manual Google test:** use a dedicated test account and explicit test data; never use production credentials in automated test logs.
 - **Security tests:** ensure no token is returned in API JSON, HTML, client bundles, URLs, or logs.
@@ -515,7 +553,8 @@ The MVP can perform bounded, request-driven operations. Add a durable queue for 
 |---|---|
 | Google OAuth verification or scope restrictions | Begin with minimal scopes; verify requirements before public launch |
 | Refresh token theft | Server-only storage, authenticated encryption, managed encryption key, redacted logs |
-| One user's account accessed by another | Session-derived identity, per-request ownership checks, foreign keys, security tests |
+| One user's account/file accessed by another | Deny-by-default ownership checks on every request, scoped database queries, no ID-based trust, cross-user isolation tests |
+| Accidental or over-broad sharing | No sharing in MVP; future explicit recipient/resource/action grants, revocation, and Google permission checks |
 | API quotas and rate limits | Bounded concurrency, pagination, backoff, cache, account-level error states |
 | Confusing aggregate quota with one quota | Label aggregate as informational and keep every operation tied to one account |
 | Provider outage | Partial results, stale indicators, graceful account-level failures |
@@ -534,7 +573,9 @@ Before significant feature development, the repository should have:
 - [ ] Validated environment configuration and a safe `.env.example`.
 - [ ] No real credentials committed.
 - [ ] A documented OAuth scope decision for the first Google Drive feature.
-- [ ] Tests that enforce user/account ownership boundaries.
+- [ ] Tests that enforce user/account/file ownership boundaries and reject cross-user access.
+- [ ] Default-deny policy documented: no explicit, validated share grant means no access.
+- [ ] Sharing is excluded from the MVP unless a separate threat model and permission design are approved.
 - [ ] A phased implementation plan tracked as issues or milestones.
 
 ---
