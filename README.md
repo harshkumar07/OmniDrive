@@ -16,7 +16,7 @@ OmniDrive is a web application concept for browsing and managing files across mu
 - A combined storage summary is informational; it does not merge account quotas or authorize quota circumvention.
 - OAuth secrets and tokens must remain server-side and must never be committed or sent to the browser.
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the system architecture, data model, trust boundaries, security rules, and implementation plan.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the system architecture and [docs/SECURITY.md](docs/SECURITY.md) for the security baseline and cross-user isolation tests.
 
 ## Tech stack
 
