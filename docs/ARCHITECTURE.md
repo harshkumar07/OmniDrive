@@ -1,6 +1,6 @@
 # OmniDrive — Overall System Architecture
 
-> **Status:** Proposed architecture — implementation has not started  
+> **Status:** Architecture documented; initial UI scaffold committed; provider integration and security enforcement are not implemented yet  
 > **Document type:** High-level architecture (HLA) and foundational engineering decisions  
 > **Repository:** `harshkumar07/OmniDrive`  
 > **Last updated:** 2026-10-11
